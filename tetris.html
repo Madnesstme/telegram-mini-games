@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тетрис</title>
+    <style>
+        body { margin: 0; padding: 20px; background: #1a1a1a; color: white; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
+        #gameCanvas { border: 2px solid #333; background: #000; }
+        .game-info { margin-top: 20px; text-align: center; }
+        .score { font-size: 24px; margin: 10px 0; }
+        .controls { margin-top: 20px; font-size: 14px; color: #ccc; }
+        .btn { background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+        .btn:hover { background: #45a049; }
+    </style>
+</head>
+<body>
+    <h1>🎮 Тетрис</h1>
+    <canvas id="gameCanvas" width="300" height="600"></canvas>
+    <div class="game-info">
+        <div class="score">Счёт: <span id="score">0</span></div>
+        <div class="score">Уровень: <span id="level">1</span></div>
+        <div class="score">Линии: <span id="lines">0</span></div>
+    </div>
+    <div class="controls">
+        <button class="btn" onclick="startGame()">Начать игру</button>
+        <button class="btn" onclick="pauseGame()">Пауза</button>
+        <p>Управление: ← → (движение), ↓ (падение), ↑ (поворот)</p>
+    </div>
+    <script>
+        // ... (сюда вставить JS код тетриса, как в предыдущем варианте) ...
+    </script>
+</body>
+</html> 
