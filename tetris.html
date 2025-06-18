@@ -2,16 +2,51 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;">
     <title>Тетрис</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { margin: 0; padding: 20px; background: #1a1a1a; color: white; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
-        #gameCanvas { border: 2px solid #333; background: #000; }
-        .game-info { margin-top: 20px; text-align: center; }
-        .score { font-size: 24px; margin: 10px 0; }
-        .controls { margin-top: 20px; font-size: 14px; color: #ccc; }
-        .btn { background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
-        .btn:hover { background: #45a049; }
+        body { 
+            margin: 0; 
+            padding: 20px; 
+            background: var(--tg-theme-bg-color, #1a1a1a); 
+            color: var(--tg-theme-text-color, white); 
+            font-family: Arial, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+        }
+        #gameCanvas { 
+            border: 2px solid var(--tg-theme-hint-color, #333); 
+            background: #000; 
+        }
+        .game-info { 
+            margin-top: 20px; 
+            text-align: center; 
+        }
+        .score { 
+            font-size: 24px; 
+            margin: 10px 0; 
+            color: var(--tg-theme-text-color, white);
+        }
+        .controls { 
+            margin-top: 20px; 
+            font-size: 14px; 
+            color: var(--tg-theme-hint-color, #ccc); 
+        }
+        .btn { 
+            background: var(--tg-theme-button-color, #4CAF50); 
+            color: var(--tg-theme-button-text-color, white); 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin: 5px; 
+        }
+        .btn:hover { 
+            background: var(--tg-theme-secondary-bg-color, #45a049); 
+        }
     </style>
 </head>
 <body>
@@ -27,8 +62,283 @@
         <button class="btn" onclick="pauseGame()">Пауза</button>
         <p>Управление: ← → (движение), ↓ (падение), ↑ (поворот)</p>
     </div>
+
     <script>
-        // ... (сюда вставить JS код тетриса, как в предыдущем варианте) ...
+        // Инициализация Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const BLOCK_SIZE = 30;
+        const COLS = 10;
+        const ROWS = 20;
+        
+        let board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+        let score = 0;
+        let level = 1;
+        let lines = 0;
+        let gameRunning = false;
+        let gamePaused = false;
+        
+        const SHAPES = [
+            [[1,1,1,1]], // I
+            [[1,1],[1,1]], // O
+            [[1,1,1],[0,1,0]], // T
+            [[1,1,1],[1,0,0]], // L
+            [[1,1,1],[0,0,1]], // J
+            [[1,1,0],[0,1,1]], // S
+            [[0,1,1],[1,1,0]]  // Z
+        ];
+        
+        const COLORS = ['#00f0f0', '#f0f000', '#a000f0', '#f0a000', '#0000f0', '#00f000', '#f00000'];
+        
+        let currentPiece = null;
+        let currentX = 0;
+        let currentY = 0;
+        let currentColor = '';
+        
+        function createPiece() {
+            const shapeIndex = Math.floor(Math.random() * SHAPES.length);
+            return {
+                shape: SHAPES[shapeIndex],
+                color: COLORS[shapeIndex]
+            };
+        }
+        
+        function drawBlock(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+        }
+        
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (board[y][x]) {
+                        drawBlock(x, y, board[y][x]);
+                    }
+                }
+            }
+            
+            if (currentPiece) {
+                for (let y = 0; y < currentPiece.shape.length; y++) {
+                    for (let x = 0; x < currentPiece.shape[y].length; x++) {
+                        if (currentPiece.shape[y][x]) {
+                            drawBlock(currentX + x, currentY + y, currentPiece.color);
+                        }
+                    }
+                }
+            }
+        }
+        
+        function isValidMove(piece, x, y) {
+            for (let row = 0; row < piece.shape.length; row++) {
+                for (let col = 0; col < piece.shape[row].length; col++) {
+                    if (piece.shape[row][col]) {
+                        const newX = x + col;
+                        const newY = y + row;
+                        
+                        if (newX < 0 || newX >= COLS || newY >= ROWS) return false;
+                        if (newY >= 0 && board[newY][newX]) return false;
+                    }
+                }
+            }
+            return true;
+        }
+        
+        function placePiece() {
+            for (let y = 0; y < currentPiece.shape.length; y++) {
+                for (let x = 0; x < currentPiece.shape[y].length; x++) {
+                    if (currentPiece.shape[y][x]) {
+                        board[currentY + y][currentX + x] = currentPiece.color;
+                    }
+                }
+            }
+            
+            let linesCleared = 0;
+            for (let y = ROWS - 1; y >= 0; y--) {
+                if (board[y].every(cell => cell !== 0)) {
+                    board.splice(y, 1);
+                    board.unshift(Array(COLS).fill(0));
+                    linesCleared++;
+                    y++;
+                }
+            }
+            
+            if (linesCleared > 0) {
+                lines += linesCleared;
+                score += linesCleared * 100 * level;
+                level = Math.floor(lines / 10) + 1;
+                updateDisplay();
+                
+                // Отправляем счет в Telegram
+                tg.sendData(JSON.stringify({
+                    game: 'tetris',
+                    score: score,
+                    level: level,
+                    lines: lines
+                }));
+            }
+            
+            newPiece();
+        }
+        
+        function newPiece() {
+            currentPiece = createPiece();
+            currentX = Math.floor(COLS / 2) - Math.floor(currentPiece.shape[0].length / 2);
+            currentY = 0;
+            
+            if (!isValidMove(currentPiece, currentX, currentY)) {
+                gameRunning = false;
+                alert('Игра окончена! Счёт: ' + score);
+                
+                // Отправляем финальный счет в Telegram
+                tg.sendData(JSON.stringify({
+                    game: 'tetris',
+                    gameOver: true,
+                    finalScore: score,
+                    level: level,
+                    lines: lines
+                }));
+            }
+        }
+        
+        function updateDisplay() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('level').textContent = level;
+            document.getElementById('lines').textContent = lines;
+        }
+        
+        function gameLoop() {
+            if (gameRunning && !gamePaused) {
+                if (isValidMove(currentPiece, currentX, currentY + 1)) {
+                    currentY++;
+                } else {
+                    placePiece();
+                }
+                drawBoard();
+            }
+        }
+        
+        function startGame() {
+            if (!gameRunning) {
+                board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+                score = 0;
+                level = 1;
+                lines = 0;
+                gameRunning = true;
+                gamePaused = false;
+                newPiece();
+                updateDisplay();
+            }
+        }
+        
+        function pauseGame() {
+            if (gameRunning) {
+                gamePaused = !gamePaused;
+            }
+        }
+        
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning || gamePaused) return;
+            
+            switch(e.keyCode) {
+                case 37: // Left
+                    if (isValidMove(currentPiece, currentX - 1, currentY)) {
+                        currentX--;
+                        drawBoard();
+                    }
+                    break;
+                case 39: // Right
+                    if (isValidMove(currentPiece, currentX + 1, currentY)) {
+                        currentX++;
+                        drawBoard();
+                    }
+                    break;
+                case 40: // Down
+                    if (isValidMove(currentPiece, currentX, currentY + 1)) {
+                        currentY++;
+                        drawBoard();
+                    }
+                    break;
+                case 38: // Up (rotate)
+                    const rotated = [];
+                    for (let i = 0; i < currentPiece.shape[0].length; i++) {
+                        rotated[i] = [];
+                        for (let j = currentPiece.shape.length - 1; j >= 0; j--) {
+                            rotated[i].push(currentPiece.shape[j][i]);
+                        }
+                    }
+                    const rotatedPiece = {shape: rotated, color: currentPiece.color};
+                    if (isValidMove(rotatedPiece, currentX, currentY)) {
+                        currentPiece = rotatedPiece;
+                        drawBoard();
+                    }
+                    break;
+            }
+        });
+        
+        // Добавляем обработку тач-событий для мобильных устройств
+        let touchStartX = 0;
+        let touchStartY = 0;
+        
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (!gameRunning || gamePaused) return;
+            
+            const touchEndX = e.touches[0].clientX;
+            const touchEndY = e.touches[0].clientY;
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+            
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                if (diffX > 30) { // Свайп вправо
+                    if (isValidMove(currentPiece, currentX + 1, currentY)) {
+                        currentX++;
+                        drawBoard();
+                    }
+                } else if (diffX < -30) { // Свайп влево
+                    if (isValidMove(currentPiece, currentX - 1, currentY)) {
+                        currentX--;
+                        drawBoard();
+                    }
+                }
+            } else {
+                if (diffY > 30) { // Свайп вниз
+                    if (isValidMove(currentPiece, currentX, currentY + 1)) {
+                        currentY++;
+                        drawBoard();
+                    }
+                } else if (diffY < -30) { // Свайп вверх (поворот)
+                    const rotated = [];
+                    for (let i = 0; i < currentPiece.shape[0].length; i++) {
+                        rotated[i] = [];
+                        for (let j = currentPiece.shape.length - 1; j >= 0; j--) {
+                            rotated[i].push(currentPiece.shape[j][i]);
+                        }
+                    }
+                    const rotatedPiece = {shape: rotated, color: currentPiece.color};
+                    if (isValidMove(rotatedPiece, currentX, currentY)) {
+                        currentPiece = rotatedPiece;
+                        drawBoard();
+                    }
+                }
+            }
+            
+            touchStartX = touchEndX;
+            touchStartY = touchEndY;
+            e.preventDefault();
+        });
+        
+        setInterval(gameLoop, 1000 / level);
+        drawBoard();
     </script>
 </body>
 </html> 
