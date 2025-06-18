@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;">
+    <meta http-equiv="X-Frame-Options" content="ALLOW-FROM https://web.telegram.org/">
+    <meta name="format-detection" content="telephone=no">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="MobileOptimized" content="176">
+    <meta name="HandheldFriendly" content="True">
+    <meta name="robots" content="noindex,nofollow">
+    <title>Space Shooter</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        html {
+            scroll-behavior: smooth;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body { 
+            margin: 0; 
+            padding: 20px; 
+            background: var(--tg-theme-bg-color, #1a1a1a); 
+            color: var(--tg-theme-text-color, white); 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            display: flex; 
+            flex-direction: column; 
+            align-items: center;
+            -webkit-user-select: none;
+            user-select: none;
+            overflow-x: hidden;
+        }
+        #gameCanvas { 
+            border: 2px solid var(--tg-theme-hint-color, #333); 
+            background: #000;
+            touch-action: none;
+        }
+        .game-info { 
+            margin-top: 20px; 
+            text-align: center; 
+        }
+        .score { 
+            font-size: 24px; 
+            margin: 10px 0; 
+            color: var(--tg-theme-text-color, white);
+        }
+        .controls { 
+            margin-top: 20px; 
+            font-size: 14px; 
+            color: var(--tg-theme-hint-color, #ccc); 
+        }
+        .btn { 
+            background: var(--tg-theme-button-color, #4CAF50); 
+            color: var(--tg-theme-button-text-color, white); 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin: 5px;
+            font-size: 16px;
+            font-weight: 500;
+            transition: opacity 0.2s ease;
+            touch-action: manipulation;
+        }
+        .btn:hover { 
+            background: var(--tg-theme-secondary-bg-color, #45a049); 
+        }
+        .btn:active {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 Космический Шутер</h1>
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+    <div class="game-info">
+        <div class="score">Счёт: <span id="score">0</span></div>
+        <div class="score">Жизни: <span id="lives">3</span></div>
+        <div class="score">Уровень: <span id="level">1</span></div>
+    </div>
+    <div class="controls">
+        <button class="btn" onclick="startGame()">Начать игру</button>
+        <button class="btn" onclick="pauseGame()">Пауза</button>
+        <p>Управление: ← → (движение), Пробел (стрельба)</p>
+    </div>
+
+    <script>
+        // Инициализация Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let gameRunning = false;
+        let gamePaused = false;
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 50,
+            width: 40,
+            height: 40,
+            speed: 5
+        };
+        
+        let bullets = [];
+        let enemies = [];
+        let particles = [];
+        
+        function drawPlayer() {
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(player.x - player.width/2, player.y - player.height/2, player.width, player.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(player.x - 2, player.y - player.height/2 - 10, 4, 10);
+        }
+        
+        function drawBullets() {
+            ctx.fillStyle = '#ffff00';
+            bullets.forEach(bullet => {
+                ctx.fillRect(bullet.x - 2, bullet.y - 8, 4, 8);
+            });
+        }
+        
+        function drawEnemies() {
+            ctx.fillStyle = '#ff0000';
+            enemies.forEach(enemy => {
+                ctx.fillRect(enemy.x - enemy.width/2, enemy.y - enemy.height/2, enemy.width, enemy.height);
+            });
+        }
+        
+        function drawParticles() {
+            ctx.fillStyle = '#ffffff';
+            particles.forEach(particle => {
+                ctx.fillRect(particle.x, particle.y, 2, 2);
+            });
+        }
+        
+        function updateBullets() {
+            bullets.forEach((bullet, index) => {
+                bullet.y -= 10;
+                if (bullet.y < 0) {
+                    bullets.splice(index, 1);
+                }
+            });
+        }
+        
+        function updateEnemies() {
+            enemies.forEach((enemy, index) => {
+                enemy.y += enemy.speed;
+                if (enemy.y > canvas.height) {
+                    enemies.splice(index, 1);
+                    lives--;
+                    updateDisplay();
+                }
+            });
+        }
+        
+        function updateParticles() {
+            particles.forEach((particle, index) => {
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.life--;
+                if (particle.life <= 0) {
+                    particles.splice(index, 1);
+                }
+            });
+        }
+        
+        function checkCollisions() {
+            bullets.forEach((bullet, bulletIndex) => {
+                enemies.forEach((enemy, enemyIndex) => {
+                    if (bullet.x > enemy.x - enemy.width/2 && 
+                        bullet.x < enemy.x + enemy.width/2 &&
+                        bullet.y > enemy.y - enemy.height/2 && 
+                        bullet.y < enemy.y + enemy.height/2) {
+                        
+                        for (let i = 0; i < 10; i++) {
+                            particles.push({
+                                x: enemy.x,
+                                y: enemy.y,
+                                vx: (Math.random() - 0.5) * 10,
+                                vy: (Math.random() - 0.5) * 10,
+                                life: 30
+                            });
+                        }
+                        
+                        bullets.splice(bulletIndex, 1);
+                        enemies.splice(enemyIndex, 1);
+                        score += 100;
+                        updateDisplay();
+                        
+                        // Отправляем счет в Telegram
+                        tg.sendData(JSON.stringify({
+                            game: 'space_shooter',
+                            score: score,
+                            level: level,
+                            lives: lives
+                        }));
+                    }
+                });
+            });
+        }
+        
+        function spawnEnemy() {
+            if (Math.random() < 0.02 + level * 0.005) {
+                enemies.push({
+                    x: Math.random() * canvas.width,
+                    y: -20,
+                    width: 30,
+                    height: 30,
+                    speed: 1 + level * 0.5
+                });
+            }
+        }
+        
+        function shoot() {
+            bullets.push({
+                x: player.x,
+                y: player.y - player.height/2
+            });
+        }
+        
+        function updateDisplay() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('lives').textContent = lives;
+            document.getElementById('level').textContent = level;
+            
+            if (lives <= 0) {
+                gameRunning = false;
+                alert('Игра окончена! Счёт: ' + score);
+                
+                // Отправляем финальный счет в Telegram
+                tg.sendData(JSON.stringify({
+                    game: 'space_shooter',
+                    gameOver: true,
+                    finalScore: score,
+                    level: level
+                }));
+            }
+            
+            level = Math.floor(score / 1000) + 1;
+        }
+        
+        function gameLoop() {
+            if (gameRunning && !gamePaused) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                drawPlayer();
+                drawBullets();
+                drawEnemies();
+                drawParticles();
+                
+                updateBullets();
+                updateEnemies();
+                updateParticles();
+                checkCollisions();
+                spawnEnemy();
+            }
+        }
+        
+        function startGame() {
+            if (!gameRunning) {
+                score = 0;
+                lives = 3;
+                level = 1;
+                bullets = [];
+                enemies = [];
+                particles = [];
+                gameRunning = true;
+                gamePaused = false;
+                updateDisplay();
+            }
+        }
+        
+        function pauseGame() {
+            if (gameRunning) {
+                gamePaused = !gamePaused;
+            }
+        }
+        
+        // Обработка клавиатуры
+        let keys = {};
+        
+        document.addEventListener('keydown', (e) => {
+            keys[e.keyCode] = true;
+            
+            if (e.keyCode === 32) { // Space
+                e.preventDefault();
+                if (gameRunning && !gamePaused) {
+                    shoot();
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.keyCode] = false;
+        });
+        
+        function handleInput() {
+            if (gameRunning && !gamePaused) {
+                if (keys[37] && player.x > player.width/2) { // Left
+                    player.x -= player.speed;
+                }
+                if (keys[39] && player.x < canvas.width - player.width/2) { // Right
+                    player.x += player.speed;
+                }
+            }
+        }
+        
+        // Добавляем обработку тач-событий для мобильных устройств
+        let touchStartX = 0;
+        
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            if (gameRunning && !gamePaused) {
+                shoot();
+            }
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (!gameRunning || gamePaused) return;
+            
+            const touchEndX = e.touches[0].clientX;
+            const diffX = touchEndX - touchStartX;
+            
+            if (diffX > 30 && player.x < canvas.width - player.width/2) { // Свайп вправо
+                player.x += player.speed;
+            } else if (diffX < -30 && player.x > player.width/2) { // Свайп влево
+                player.x -= player.speed;
+            }
+            
+            touchStartX = touchEndX;
+            e.preventDefault();
+        });
+        
+        setInterval(gameLoop, 1000/60);
+        setInterval(handleInput, 1000/60);
+        updateDisplay();
+    </script>
+</body>
+</html> 
